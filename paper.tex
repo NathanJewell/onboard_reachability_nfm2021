@@ -5,6 +5,8 @@
 \documentclass[runningheads]{llncs}
 %
 \usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{float}
 % Used for displaying a sample figure. If possible, figure files should
 % be included in EPS format.
 %
@@ -14,7 +16,7 @@
 
 \begin{document}
 %
-\title{Successively Linearized Reachability onboard  the F1/10 Platform\thanks{Supported by organization x.}}
+\title{Successively Linearized Onboard Reachability\thanks{Supported by organization x.}}
 %
 %\titlerunning{Abbreviated paper title}
 % If the paper title is too long for the running head, you can set
@@ -55,13 +57,20 @@ We explore a number of different runtime modes for profiling successively linear
 \subsection{Runtime Modes}
 
 \subsubsection{HYLAA} \newline The original hybrid reachability tool [cite].
-\subsubsection{Quickzono Single Core} [QZ\_CPU] \newline A simplified subset of HYLAA code with succinct wrappers.  \\
-\subsubsection{Quickzono Multiple Core} [QZ\_MP] \newline Quickzono code with a trivial CPU-based multiprocessing model \newline applied to the projection step. \\
-\subsubsection{Quickzono GPU Dummy} [QZ\_DUMMY] \newline Quickzono with data copied to and from the GPU but running\newline a dummy kernel on the GPU which does no computation of the projection. \\
-\subsubsection{Quickzono GPU Hybrid} [QZ\_HYBRID] \newline Hybrid GPU/CPU implementation, with the most taxing\newline part of the projection algorithm moved onto the GPU device. \\
+\vspace*{-5pt}
+\subsubsection{Quickzono Single Core} [QZ\_CPU] \newline A simplified subset of HYLAA code with succinct wrappers. 
+\vspace*{-5pt}
+\subsubsection{Quickzono Multiple Core} [QZ\_MP] \newline Quickzono code with a trivial CPU-based multiprocessing model \newline applied to the projection step. 
+\vspace*{-5pt}
+\subsubsection{Quickzono GPU Dummy} [QZ\_DUMMY] \newline Quickzono with data copied to and from the GPU but running\newline a dummy kernel on the GPU which does no computation of the projection. 
+\vspace*{-5pt}
+\subsubsection{Quickzono GPU Hybrid} [QZ\_HYBRID] \newline Hybrid GPU/CPU implementation, with the most taxing\newline part of the projection algorithm moved onto the GPU device. 
+\vspace*{-5pt}
 
-\subsection{Offline Execution}
-\subsection{Offline Execution}
+\subsection{Offline Profiling}
+In offline profiling, reachability is computed as the sole program running on the system. A dedicated testing script executes each of the runtime modes for 200 trials at intervals between 5 to 40 reachability steps. HYLAA is only tested up to 20 steps due to slow performance. The script outputs timing data excluding any one-off setup and configuration code.
+\subsection{Online Profiling}
+In online profiling, reachability is computed as part of a ROS network running physical control nodes (controller input, motor and servo control, etc..), a GPU based particle filter node for localization, a model predictive control node, and various other supporting nodes. Before beginning the profiling, the vehicle is placed into the test track, localized and configured to autonomously drive the track until profiling is complete. The reachability node is implemented as a wrapper for separate reachability classes (those called by the offline profiler) and records call timings for the same function, executing as quickly as possible. The online profiler is configured to automatically switch between runtimes modes and number of reachability steps. This occurs for the same parameters as in offline profiling except only those configurations executing at least 4hz (<=250ms per trial) are considered. HYLAA is not tested in this profiling due to slow performance.
 \subsection{Performance Characteristics}
 There are a number of important characteristics needed to describe the performance of a real time embedded algorithm.
 
@@ -91,14 +100,26 @@ What is a trial? One execution of the reachability computation.
 
 \section{Results}
 
-\section{Discussion}
-
-\begin{figure}
-\includegraphics[width=\textwidth]{fig1.eps}
-\caption{A figure caption is always placed below the illustration.
-Please note that short captions are centered, while long ones are
-justified by the macro package automatically.} \label{fig1}
+\begin{figure}[H]
+\includegraphics[width=\textwidth]{profiler_out/all_avg_unified.png}
+\caption{Average trial execution times for all runtime modes in online and offline configuration.} \label{fig1}
 \end{figure}
+\begin{figure}[H]
+\includegraphics[width=\textwidth]{profiler_out/all_avg_unified.png}
+\caption{Average trial execution times for all runtime modes in online and offline configuration.} \label{fig1}
+\end{figure}
+\begin{figure}[H]
+    \subcaptionbox{Detail of the Quickzono GPU Hybrid runtimes with 95\% confidence intervals.\label{CPU_CI}}{\includegraphics[width=.5\linewidth]{profiler_out/avg_QZ-CPU_CI.png} }
+    \subcaptionbox{Detail of the Quickzono Single Core runtimes with 95\% confidence intervals.\label{MP_CI}}{\includegraphics[width=.5\linewidth]{profiler_out/avg_QZ-MP_CI.png} }
+\begin{subfigure}{\linewidth}
+    \includegraphics[width=.5\linewidth]{profiler_out/avg_QZ-HYBRID_CI.png}
+    \includegraphics[width=.5\linewidth]{profiler_out/avg_QZ-CPU_CI.png} \hfill
+
+\end{subfigure}
+
+\end{figure}
+
+\section{Discussion}
 
 %
 % ---- Bibliography ----
