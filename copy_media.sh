@@ -1,1 +1,1 @@
-cp -r /home/nathan/ppcm/reachability/scripts/profiler/ ./profiler_out
+cp -r /home/nathan/ppcm/reachability/scripts/profiler ./profiler_out -T
