@@ -40,17 +40,15 @@ Houssam Abbas\inst{1}\orcidID{1111-2222-3333-4444}}
 \maketitle              % typeset the header of the contribution
 %
 \begin{abstract}
-This paper demonstrates that it is possible to obtain accurate, real-time reachability computations for an autonomous vehicle using only simple kinematics, parallelization on a GPU without any algorithmic changes, and while running a full autonomous racing stack.
-This stands in contrast to existing work which required the development of custom parallelizable reachability algorithms, the use of accurate nonlinear models of the dynamics, and was limited to a shorter look-ahead horizon. 
 Reachability analysis enables the safety assurance of control systems despite uncertain initial conditions and control inputs, and can be an important component to run on-board an autonomous system.
-%The runtime of reachability analysis depend on the the system dynamics, the reachability algorithm, the hardware it is running on, and what other processes are sharing the hardware.
-%
-In this work we set out to see whether it is possible to obtain accurate and timely reachability computations using a common CPU+GPU hardware on-board an autonomous vehicle, with minimal upfront effort.
+This tool paper demonstrates that it is possible to obtain accurate, real-time reachability computations for an autonomous vehicle using only simple kinematics, parallelization on a GPU without algorithmic changes, and while running a full autonomous racing stack.
+%This stands in contrast to existing work which required the development of custom parallelizable reachability algorithms, the use of accurate nonlinear models of the dynamics, and was limited to a shorter look-ahead horizon. 
 We leverage HYLAA, a state-of-the-art reachability tool.
-Our solution uses simple linearized kinematics, yet it is accurate; runs in Python, yet is real-time; shares the hardware with a full autonomous racing stack including a state-of-the-art optimization-based predictive controller; and is partitioned between CPU and GPU without any algorithmic modifications, rather, only code-level parallelization is used.
-In our testing we achieve accurate 10-step reachability as quickly as 150 milliseconds. We also find that porting portions of reachability onto the GPU can improve the runtime for 10-step reachability by 62\% over a CPU only implementation.% and reduces the computational complexity in relation to number of reachability steps.
+Our solution uses simple linearized kinematics, yet it is accurate; runs in Python, yet is real-time; shares the hardware with a full autonomous racing stack including a state-of-the-art optimization-based predictive controller; and is partitioned between CPU and GPU using only code-level parallelization.
+In our testing we achieve accurate 10-step reachability as quickly as 150 milliseconds. 
+We also find that porting portions of reachability onto the GPU can improve the runtime for 10-step reachability by 62\% over a CPU only implementation.% and reduces the computational complexity in relation to number of reachability steps.
 We demonstrate our results on the F1/10 1/10th-scale autonomous race car.
-This work lowers the barrier to running reachability significantly, as it removes the need to do time-consuming system identification, the need to employ nonlinear reachability tools, and the need to do an algorithm-specific modifications to enable GPU parallelization.
+This work lowers the barrier to running reachability significantly, as it reduces the need to do time-consuming system identification, the need to employ nonlinear reachability tools, and the need to do algorithmic modifications to enable GPU parallelization.
 
 \keywords{Reachability  \and Safety Analysis \and CUDA \and GPU}
 \end{abstract}
@@ -58,146 +56,136 @@ This work lowers the barrier to running reachability significantly, as it remove
 %
 %
 \section{Introduction}
-Reachability is the computation and interpretation of possible future agent states at a time or set of times. Given an agent's current state and a range of possible future inputs, a reachability algorithm outputs information about all possible states of the agent at time $T$ in the future. For computational efficiency and practical use, we discuss discrete-time reachability algorithms. In discrete-time reachability, a range of $N$ possible state spaces are generated for $N$ future times. defined by intervals spaced by the discretization time step, $dt$. Importantly the generated state spaces are minimal overapproximations of possible states as defined by the agent’s dynamical model. This guarantees that any state actually reached at time $T$ is within the overapproximation boundary and can be utilized for safety analysis.
+Reachability is the computation of possible future system states, given a set of initial states and a set of possible inputs at each time step. 
+In discrete-time reachability, a range of $N$ reach sets are computed for $N$ future times $dt$, $2dt$,..., $Ndt$, with the guarantee that any state actually reached at time $idt$ is within the $i^{th}$ computed reach set; thus the latter can be utilized for safety analysis\cite{malerintro}.
+Specifically, with safety-critical systems, it is necessary to verify that no error state could be reached. In autonomous vehicles, error states may involve intersections with walls, other cars or people, etc.. By checking that the reach set does not contain error states, a guarantee is obtained that the next $N$ time steps are safe.  
+Planned inputs can then be modified to avoid danger, preventing potentially catastrophic system failure. 
 
-Safety verification is the overarching goal for reachability computations. With highly reliable systems, it is necessary to verify that no error state could be reached. In autonomous vehicles, error states may involve intersections with walls, other cars or people, etc.. By checking the overapproximation of states, it can be determined if the agent is in danger of reaching an error mode in the future. Planned inputs can then be modified to avoid the danger, preventing potentially catastrophic system failure. We compute the set of reachable states, projected onto a plane representing the agent's $x$ and $y$ coordinates in a 2d map.
-
-We explore a number of different runtime modes for profiling successively linearized reachability computation. These modes are chosen to stress different components of the host system, improve runtime, and demonstrate the impact of a functional autonomous navigation stack on performance.
+In this work we set out to see whether it is possible to obtain accurate and timely reachability computations using a common CPU+GPU hardware on-board an autonomous vehicle, with minimal upfront effort, and while running an entire autonomous driving stack.
+Minimal effort means no system identification, no tuning of parameters, no algorithmic modifications, etc. 
+While this seems to go against the desire to have guaranteed computations, it has the advantage of significantly lowering the barrier to running reachability analysis, and we show empirically that the computations are still accurate. GPU based implementations of reachability include, Xspeed which introduces algorithms optimized for GPU performance. \cite{xspeed}.
+%We explore a number of different runtime modes for profiling reachability computation. These modes are chosen to stress different components of the host system, improve runtime, and demonstrate the impact of a functional autonomous navigation stack on performance.
 
 \section{Background}
 \subsection{F1/10 Platform}
-Our experiments used the F1/10 autonomous racing platform which is a standardized hardware platform designed to facilitate algorithmic improvements for high-reliability autonomous systems. The vehicle consists of a highly modified one tenth scale remote control car chassis and is equipped with an improved electronic speed controller and LIDAR. The compute platform is an NVIDIA Jetson TX2 computer designed for use in embedded systems. The Jetson TX2 is equipped with a dual CPU setup providing 6 (4+2) physical cores onboard the vehicle as well as a modern NVIDIA GPU and 8GB RAM. The installed autonomous navigation and mapping software is a combination of low-level nodes to interface with hardware, publicly available SLAM algorithms, and the model predictive control and reachability software developed in our lab.
+Our experiments used the F1/10 autonomous racing platform which is a standardized hardware platform designed to facilitate algorithmic improvements for high-reliability autonomous systems. The vehicle consists of a modified one tenth scale remote control car chassis and is equipped with an improved electronic speed controller and LIDAR. The compute platform is an NVIDIA Jetson TX2 computer designed for use in embedded systems. The Jetson TX2 is equipped with a dual CPU setup providing 6 (4+2) physical cores on-board the vehicle as well as an NVIDIA GPU and 8GB RAM. The installed autonomous navigation and mapping software is a combination of low-level nodes to interface with hardware, publicly available SLAM algorithms, and the model predictive contour control \cite{mpcc}. 
+It also includes the reachability software to be described next.
 
+\subsection{The HYLAA Tool and its QuickZono variant}
+HYLAA \cite{hylaa} is a state-of-the-art linear reachability analysis tool - that is, it can handle linear and linear hybrid dynamical systems.
+HYLAA output is a collection of reach sets. A reach set is a tight over-approximation of all possible \emph{reachable} states at some future time $t$ (it is known to be theoretically impossible to obtain an exact representation of a reach set except in very special cases). 
+HYLAA adopts a simulation-equivalent approach where the linear superposition principle is applied to reduce the number of necessary simulations to $N+1$ for each simulated step in a N-dimensional system. 
+Safety conditions are represented as unsafe polytopes in state-space that should be avoided (a polytope is a bounded intersection of half-spaces). 
+The check of whether a reach set intersects an unsafe polytope reduces to a linear feasibility problem and is performed inline with the reachability analysis. 
+%A variety of configuration options are provided to accommodate a variety of hybrid systems with changing dynamics.
 
-
-
-\subsection{The HYLAA Tool}
-The original HYLAA tool allows for solving linear reachability problems represented by hybrid automata with affine dynamics. HYLAA output is defined as a collection of reach sets. A reach set is the approximation of all possible \emph{reachable} states at future time $t$. HYLAA adopts a simulation-equivalent approach where the superposition principle for linear systems is applied to reduce the number of necessary simulations for any mode to $N+1$ for each simulated step in a N-dimensional system. Safety conditions represented by their linear inequalities are evaluated inline with the simulation and a variety of conditions configuration options are provided to accommodate a variety of hybrid systems with changing dynamics.
-
-\subsection{QuickZono: a HYLAA variant}
-Quickzono simplifies the HYLAA algorithm, easing the implementation of realtime performance. Many features of HYLAA were secondary to generating the core set of reachable states in out system and are removed in QuickZono to improve performance. Instead of using the formalism of hybrid automata, QuickZono uses zonotopes to represent the agent state and perform the reachability simulation. The agent state at time $t$, $S_t$ is used to compute the next reachable set $S_{t+dt}$ at time $t + dt$ where $dt$ is the discretization step-size. The computation is in the form $S_{t+dt} = S_t \cdot A + I_t \cdot B$ where $I_t$ is the planned inputs at time $t$ and matrices $A, B$ are the dynamics for the system. In our experiments these dynamics are linearized around the predicted agent state at that time as given by the MPC. QuickZono also leaves the checking of safety conditions for post-processing step, but importantly still produces 2-dimensional projections necessary for validating these conditions in linear time.
+\textbf{QuickZono: a HYLAA variant.}
+Quickzono simplifies the HYLAA algorithm, easing the implementation of realtime performance. 
+Many features of HYLAA were secondary to the task of generating the core set of reachable states and are removed in QuickZono.
+%Instead of using the formalism of hybrid automata, QuickZono uses zonotopes to represent the agent state and perform the reachability simulation. 
+The agent state at time $t$, $S_t$ is used to compute the next reachable set $S_{t+dt}$ at time $t + dt$ where $dt$ is the discretization step-size. The computation is in the form $S_{t+dt} = S_t \cdot A + I_t \cdot B$ where $I_t$ is the planned inputs at time $t$ and matrices $A, B$ are the dynamics for the system. 
+In our experiments these dynamics are obtained by successive linearization as explained in the next section.
+QuickZono also defers the checking of safety conditions until after all reach sets are computed, rather than inline this check as in the default HYLAA.
+While the system state can be $N$ dimensional for any $N$, the unsafe sets for an autonomous vehicle are 2-dimensional obstacles in the $(x,y)$ plane. 
+QuickZono still produces the  2-dimensional projections of reach sets onto $(x,y)$, necessary for checking the safety conditions.
 
 \subsection{Successively Linearized Kinematics}
-We identified a simple 3 variable kinematic model for the car based on its physical properties.
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=.65\textwidth]{screenshots/FinalTopCorner.png}
+    \caption{Zonotope projections from a 10-step reachability problem computed in realtime (multicolored polygons). Visualization is rendered in Rviz and shows the rasterized map in the background, overlayed by LIDAR scan data (multicolored points), MPCC trajectory (red line), and vehicle position/heading (red arrows). }
+    \label{fig:my_label}
+\end{figure}
+
+We use a simple 3 variable kinematic model for the car:
 \begin{equation}
-\dot{x} = v \cos{\psi + d} \\
-\dot{y} = v \sin{\psi + d} \\
-\dot{\psi} = v \frac{1}{L} \sin(d)
+\dot{x} = v \cos{\psi + d},~\dot{y} = v \sin{\psi + d},~\dot{\psi} = v \frac{1}{L} \sin(d)
 \end{equation}
 
-Define the state vector, $S$, formed by $x, y, \psi$
-$$S = [x, y, \psi]$$
-
-And the input vector, $U$, formed by $v, d$
-$$ U = [v, d]$$
-According to the underlying algebra of the reachability computation in HYLAA and Quickzono, 
-$$S_{t} = S_t \cdot A_t + U_t \cdot B$$
-
-We find that the linear dynamics for $A$ and $B$ matrices at time $t$ are
-
-$$A_t = J(\dot{S}, S)\; \text{evaluated at} \;\bar{S}_t \bigcup \bar{U}_t$$
-$$B_t =  J(\dot{S}, U)\; \text{evaluated at} \;\bar{S}_t \bigcup \bar{U}_t$$
-
-Where $J(M, V)$ is the Jacobian matrix for matrix $M$ with respect to variables $V$.
-And $\bar{S}_t$ and $\bar{U}_t$ are the predicted inputs given by the MPC at time $t$.
+Define the state vector, $S= [x, y, \psi]$, and the input vector  $U = [v, d]$.
+The state variable $\psi$ is the current yaw of the vehicle. The input variable $d$ is the steering angle in the vehicle's frame. The constant $L=.32$ is the wheel length of the vehicle in meters. 
+An on-board Model Predictive Contouring Control  (MPCC) algorithm provides a sequence of optimal inputs for the next $N$ steps, $U_1,...,U_N$, and the corresponding predicted state trajectory is $S_1,...,S_N$. 
+The non-linear kinematics are linearized around each $(S_t,U_t)$, thus obtaining the matrices $A_t,B_t$, and the linearized dynamics at step $t$ are then 
+$$S_{t+1} = S_t \cdot A_t + U_t \cdot B$$
 A tuning parameter $\alpha$ is introduced to scale the steering angle prior to evaluation of the Jacobian Matrices 
 $$\bar{S}_t = [\bar{x}, \bar{y}, \alpha\cdot\bar{\psi}]$$
+This parameter was added to address the problem of over or under steering in the linearized kinematics and was tuned experimentally to $\alpha=.5$ 
 
-This parameter was added to address the problem of over or under steering in the linearized kinematics and was tuned visually to $\alpha=.5$ 
 
 \section{Parallelizing Reachability}
 Initial profiling of QuickZono using pycallgraph and cProfile revealed the large portion of computation time was spent projecting from n-dimensional zonotopes onto the useful 2-dimensional polygons which can be used to analyze safety parameters in the lower dimensional agent environment. So, this projection step was chosen as the most impactful target for parallelization. The projection was particularly well suited for this because the algorithm depends only on the target zonotope and thus is trivial to parallelize across all outputed zonotopes on the CPU.
 
-GPU parallelization using CUDA was then written without modifying the underlying algorithm for the most time intensive function called recursively in the projection algorithm. A rudimentary strategy for parallelization was applied which directly translated the iterative CPU code into a single CUDA Kernel. Effort was taken to minimize the number of memory copies to and from the GPU and GPU and compute resources were dynamically allocated depending on the number of vertices being considered in that particular projection step as well as the dimension of the reachability problem.
+GPU parallelization using CUDA was then written without modifying the underlying algorithm for the most time intensive function in QuickZono which is called recursively in the projection algorithm. A rudimentary strategy for parallelization was applied which directly translated the iterative CPU code into a single CUDA Kernel \ref{HybridComp}. While this section was the most time consuming piece of code, synchronous iteration was not completely avoided for the zonotope projection. Convex Hull computation was not moved to the GPU, resulting in additional copies between the host and the device to occur for each iteration of the synchronous loop. Effort was taken to minimize the number of memory copies to and from the GPU and compute resources were dynamically allocated depending on the number of vertices being considered in that particular convex hull as well as the dimension of the reachability problem. This implementation method of rewriting the code directly as one CUDA kernel abuses GPU thread abstractions to simplify translation. However, CUDA blocks (of threads) suffer from a constrained scalability compared to CUDA grids (of blocks) due to the memory layout on Nvidia GPUs. So, while we used shared memory to speed communication between threads within each block we also sacrificed the parallelism afforded by much larger grid sizes in this implementation.
 
+\begin{figure}[t]
+\includegraphics[width=\textwidth]{QZ_HYBRID_COMPUTATION.png}
+\caption{The QZ\_HYBRID runtime mode implements a CPU/GPU hybrid computation model. Synchronous nested loops are translated to asynchronous grids of CUDA blocks in 2 dimensions. Matrix functions are distributed across 3 dimensions of threads within each block. The light blue blocks on the host and device perform analogous computations but, when executed on the GPU, as in QZ\_HYBRID, the work is distributed across hundreds of worker threads.} \label{HybridComp}
+\end{figure}
 \section{Experimental Setup}
 
 
 \subsection{Runtime Modes}
+We compare three ways of distributing the code between the CPU cores and the GPU cores:
 
-\subsubsection{HYLAA} \newline The original hybrid reachability tool [cite].
-\vspace*{-5pt}
-\subsubsection{Quickzono Single Core} [QZ\_CPU] \newline A simplified subset of HYLAA code with succinct wrappers. 
-\vspace*{-5pt}
-\subsubsection{Quickzono Multiple Core} [QZ\_MP] \newline Quickzono code with a trivial CPU-based multiprocessing model \newline applied to the projection step. 
-\vspace*{-5pt}
-\subsubsection{Quickzono GPU Hybrid} [QZ\_HYBRID] \newline Hybrid GPU/CPU implementation, with the most taxing\newline part of the projection algorithm moved onto the GPU device. 
-\vspace*{-5pt}
+%\subsubsection{HYLAA} \newline The original hybrid reachability tool [cite].
+%\vspace*{-10pt}
+\textbf{Quickzono Single Core} [QZ\_CPU]: A simplified subset of HYLAA code with succinct wrappers. 
+
+\textbf{Quickzono Multiple Core} [QZ\_MP]: Quickzono code with a trivial CPU-based multiprocessing model \newline applied to the projection step. 
+
+\textbf{Quickzono GPU Hybrid} [QZ\_HYBRID]: Hybrid GPU/CPU implementation, with the most taxing part of the projection algorithm moved onto the GPU device. 
+
 
 \subsection{Profiling Reachability Within the Stack}
 
-In \textit{offline} profiling, reachability is computed as the sole program running on the system. A dedicated testing script executes each of the runtime modes for 200 trials at intervals between 4 and 24 reachability steps. HYLAA is only tested over 5 trials due to slow performance. 
-The script outputs timing data excluding any one-off setup and configuration code.
+In \textit{offline} profiling, reachability is computed as the sole program running on the system. 
 
 In \textit{online} profiling, reachability is computed as part of a ROS network running physical control nodes (controller input, motor and servo control, etc.), a GPU-based particle filter node for localization, a model predictive control node, and various other supporting nodes. 
 Before beginning the profiling, the vehicle is placed into the test track, localized and configured to autonomously drive the track until profiling is complete. 
-The reachability node is implemented as a wrapper for the various reachability modes described above and records call timings for the same function, executing as quickly as possible. 
-The online profiler is configured to automatically switch between runtimes modes and vary the number of reachability steps. This occurs for the same parameters as in offline profiling, except that only those configurations executing at least 4hz (<=250ms per trial) are considered. Full HYLAA is not tested in this profiling due to slow performance.
+%The reachability node is implemented as a wrapper for the various reachability modes described above and records call timings for the same function, executing as quickly as possible. 
+The online profiler is configured to automatically switch between number of reachability steps. Between runtime modes, the reachability node is  This occurs for the same parameters as in offline profiling, except that only those configurations executing at least 4hz ($\lt$250ms per trial) are considered. %Full HYLAA is not tested in this profiling due to slow performance.
 
-\subsection{Performance Characteristics}
-There are a number of important characteristics needed to describe the performance of a real time embedded algorithm.
+\paragraph{Performance Characteristics}
+Evaluating an embedded reachabiltiy algorithm is done using the following metrics: 
+1) first of course is correctness: namely that the computed set is indeed a reachset for the dynamics. To validate correctness, we used HYLAA output as the ground truth.
 
-Correctness means that the outputs are a valid solution to the problem, namely that the computed set is indeed a reachset for the dynamics.
+2) Next is runtime: running a safety algorithm is only effective when there is a low latency between consecutive executions. If this criterion is not met, safety analysis could be out of date when the agent is developing a response.
+A dedicated testing script executes each of the runtime modes for 200 trials, for $N$ reachability steps where $N$ is between 4 and 24. 
+We report average and standard deviation of runtimes over the 200 trials.
+%HYLAA is only tested over 5 trials due to slow performance. 
+The script outputs timing data excluding any one-off setup and configuration code.
 
-Scalability is how well the algorithm scales with increasing problem size. In our case, problem size is measured by the number $N$ of time steps. The number of steps is increased either by an increase in horizon $T$ or a decrease in discretization step-size $dt$, or both: $T$ = $N\cdot dt$. It is important to understand how the algorithm scales so intelligent decisions can be made about optimal horizon and precision in real time applications.
+3) Third is scalability with the number $N$ of reachability time steps. 
 
-Runtime is the time to solve the given problem. 
-Running a safety algorithm is only effective when there is a low latency between consecutive executions. If this criterion is not met, safety analysis could be out of date when the agent is developing a response, resulting in ineffective performance or a collision. 
-In contrast, low latency [runtime] will improve the safety margin of the agent by providing reachability information to the controller early enough to develop a response to it.
-
-Runtime variability is the standard deviation in the runtime. While latency is of primary importance, the consistency of the tool's runtime is paramount for autonomous systems. 
-Latency spikes at the wrong time could create dangerous problems for the agent when reacting to unsafe conditions. 
-
-\section{Methods}
-\subsection{Collected Data}
-Each characteristic has an empirical measure which we can use to analyze it quantitatively. Our offline and online profiling are run separately to evaluate the impact of running the reachability along with localization and control algorithms.
-
-To validate correctness, we used HYLAA model output, assuming that HYLAA is mathematically consistent. Outputs from other runtime modes are compared to the HYLAA output to determine if there are any significant differences. It is not necessary to validate correctness separately for online and offline computation since the same code is executed in each case.
-
-To validate scalability, each runtime model is tested with a range of values for the number of reachability steps which are representative of useful workloads. The number of steps, $N$ is equal to the ratio between total horizon time in seconds, $T$ and the discretization time-step $dt$. This varying of step values is done for both online and offline modes. However, for online trials, only models capable of running around 250ms per iteration (4hz) are considered.
-
-To test runtime, each combination of runtime mode and steps is evaluated over multiple trials. The recorded runtimes will be the average over 200 trials. This data collection is done for both online and offline testing.
-
-To test runtime variability, the all recorded runtimes from all trials are analyzed. We compute standard deviation in runtime and 95\% runtime confidence intervals around the mean assuming normally distributed variation in runtimes. This analysis is performed for both online and offline testing.
-
-Some other values are also collected for the benefit of running analysis. 
-What is a trial? One execution of the reachability computation.  
+4) Finally is runtime variability: The consistency of the tool's runtime is paramount for autonomous systems. 
+Runtime spikes at the wrong time could create dangerous situations for the agent. 
+Runtime variability is measured by runtime standard deviation, and we also report the  95\% confidence intervals around the mean assuming normally distributed variation in runtimes.
 
 
 \section{Results}
 
 \begin{figure}[t]
-\includegraphics[width=\textwidth]{profiler_out/offline_avg_unified.png}
+\includegraphics[width=.5\textwidth]{profiler_out/offline_avg_unified.png}
 \caption{Average Offline trial execution times for all runtime modes.} \label{offline_avg}
 \end{figure}
 
 \begin{figure}[t]
-\includegraphics[width=\textwidth]{profiler_out/online_avg_unified.png}
+\includegraphics[width=.5\textwidth]{profiler_out/online_avg_unified.png}
 \caption{Average Online trial execution times for all runtime modes.} \label{online_avg}
 \end{figure}
 \begin{figure}[t]
-\includegraphics[width=\textwidth]{profiler_out/avg_mp_hybrid_CI.png}
+\includegraphics[width=.5\textwidth]{profiler_out/avg_mp_hybrid_CI.png}
 \caption{Comparison between Multiprocessing and Hybridized online and offline runtimes.} \label{mp_hybrid_ci}
-\end{figure}
-\begin{figure}[t]
-    \subcaptionbox{Detail of the Quickzono GPU Hybrid runtimes with 95\% confidence intervals.\label{CPU_CI}}{\includegraphics[width=.5\linewidth]{profiler_out/avg_QZ-CPU_CI.png} }
-    \subcaptionbox{Detail of the Quickzono Single Core runtimes with 95\% confidence intervals.\label{MP_CI}}{\includegraphics[width=.5\linewidth]{profiler_out/avg_QZ-MP_CI.png} }
-\begin{subfigure}{\linewidth}
-    \includegraphics[width=.5\linewidth]{profiler_out/avg_QZ-HYBRID_CI.png}
-    \includegraphics[width=.5\linewidth]{profiler_out/avg_QZ-CPU_CI.png} \hfill
-
-\end{subfigure}
-
 \end{figure}
 
 \subsection{Discussion}
 
-Realtime reachability performance at 4hz or greater was achieved for both QZ\_MP and QZ\_HYBRID runtime modes. This represents a significant performance improvement over QZ\_CPU for both methods of parallelization. We achieved an improvement in runtime based on straightforward techniques for GPU Parallelization with Nvidia CUDA. This is important because GPU resources are more powerful than CPU resources if they can be properly utilized. Process based parallelization on in QZ\_MP showed improvement larger than \%60 at 10 time steps over QZ\_CPU. But the multiprocessing attempt strained four CPU cores which may be better utilized in other critical applications.
+Realtime reachability performance at 4hz or greater was achieved for both QZ\_MP and QZ\_HYBRID runtime modes. This represents a significant performance improvement over QZ\_CPU for both methods of parallelization \ref{offline_avg}. We achieved an improvement in runtime based on straightforward techniques for GPU Parallelization with Nvidia CUDA. This is important because GPU resources are more powerful than CPU resources if they can be properly utilized. Process based parallelization on in QZ\_MP showed improvement larger than \%60 at 10 time steps over QZ\_CPU. But the multiprocessing attempt strained four CPU cores which may be better utilized in other critical applications. Notably, 
 
-Online modes had generally higher runtimes (slower) than offline modes for all steps across all rutnime modes show pvalues??. This is sensible due to increased CPU load in online mode from SLAM + MPC algorithms.
+Online modes had generally higher runtimes (slower) than offline modes for all steps across all rutnime modes (show pvalues??). This is sensible due to increased CPU load in online mode from SLAM + MPCC algorithms. \ref{online_avg} Despite improved scalability of QZ\_HYBRID vs QZ\_CPU \ref{offline_avg} the two runtime modes have comparable timings at the lowest number of reachability steps. The overhead of making CUDA device calls for initializing GPU memory in QZ\_HYBRID may explain this discrepancy.
 
-\subsection{Further Work}
-Parallelization to the GPU left much room for improvement. Thorough GPU implementation of the algorithm could be a potential avenue to improved runtime complexity exceeding that of trivial CPU-based efforts. In larger dimensional systems, these advantages may become even more apparent.
+Comparison of QZ\_MP and QZ\_HYBRID shows a much larger 95\% confidence interval for CPU\_MP  in the offline mode. This is unexpected given anticipated variation introduced by calling CUDA functions. \ref{mp_hybrid_ci} While online execution of QZ\_HYBRID is slower than QZ\_MP, offline timings are very similar for the two modes between 14 and 22 steps. So, performance of QZ\_HYBRID is comparable to that of QZ\_MP at these configurations despite only utilizing a single CPU core. This indicates a potential for reduced CPU load without sacrificing reachability performance through only naive parallelization techniques.
+
 
 %
 % ---- Bibliography ----
@@ -205,54 +193,8 @@ Parallelization to the GPU left much room for improvement. Thorough GPU implemen
 % BibTeX users should specify bibliography style 'splncs04'.
 % References will then be sorted and formatted in the correct style.
 %
-% \bibliographystyle{splncs04}
-% \bibliography{mybibliography}
+\bibliographystyle{splncs04}
+\bibliography{bibliography}
 %
-\begin{thebibliography}{8}
-
-
-\bibitem{ref_hylaa}
-Bak S., Sridhar Duggirala P.: HyLAA: A Tool for Computing Simulation-Equivalent Reachability for Linear Systems. In:
-Proceedings of the 20th International Conference on Hybrid Systems: Computation and Control 2017
-
-%@article{Bak2017HyLAAAT,
-%  title={HyLAA: A Tool for Computing Simulation-Equivalent Reachability for Linear Systems},
-%  author={Stanley Bak and Parasara Sridhar Duggirala},
-%  journal={Proceedings of the 20th International Conference on Hybrid Systems: Computation and Control},
-%  year={2017}
-%}
-\bibitem{ref_oder}
-Maler O.: Computing Reachable Sets : An Introduction. 2008
-%@inproceedings{Maler2008ComputingRS,
-%  title={Computing Reachable Sets : An Introduction},
-%  author={O. Maler},
-%  year={2008}
-%}
-\bibitem{ref_xspeed}
-Rajarshi R. et. al., : XSpeed: Accelerating Reachability Analysis on Multi-core Processors. In: Piterman, N., Hardware and Software: Verification and Testing - 11th International Haifa Verification Conference, LNCS, vol. 9434, pp. 3--18. Springer, Haifa, Israel (2015)
-
-%@inproceedings{DBLP:conf/hvc/RayGDBBG15,
-%  author    = {Rajarshi Ray and
-%               Amit Gurung and
-%               Binayak Das and
-%               Ezio Bartocci and
-%               Sergiy Bogomolov and
-%               Radu Grosu},
-%  editor    = {Nir Piterman},
-%  title     = {XSpeed: Accelerating Reachability Analysis on Multi-core Processors},
-%  booktitle = {Hardware and Software: Verification and Testing - 11th International
-%               Haifa Verification Conference, {HVC} 2015, Haifa, Israel, November
-%               17-19, 2015, Proceedings},
-%  series    = {Lecture Notes in Computer Science},
-%  volume    = {9434},
-%  pages     = {3--18},
-%  publisher = {Springer},
-%  year      = {2015},
-%  url       = {https://doi.org/10.1007/978-3-319-26287-1\_1},
-%  doi       = {10.1007/978-3-319-26287-1\_1},
-%  timestamp = {Sat, 19 Oct 2019 20:27:11 +0200},
-%  biburl    = {https://dblp.org/rec/conf/hvc/RayGDBBG15.bib},
-%  bibsource = {dblp computer science bibliography, https://dblp.org}
-%}
-\end{thebibliography}
+%
 \end{document}
